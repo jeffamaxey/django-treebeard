@@ -148,7 +148,7 @@ class TestTreeBase(object):
             d = {}
             for tree_id, lft, rgt in model.objects.values_list("tree_id", "lft", "rgt"):
                 d.setdefault(tree_id, []).extend([lft, rgt])
-            for tree_id, got_edges in d.items():
+            for got_edges in d.values():
                 assert len(got_edges) == max(got_edges)
                 good_edges = list(range(1, len(got_edges) + 1))
                 assert sorted(got_edges) == good_edges
@@ -164,7 +164,7 @@ class TestTreeBase(object):
             for obj in results
         ]
         assert expected == got
-        assert all([type(obj[0]) == model for obj in results])
+        assert all(type(obj[0]) == model for obj in results)
 
 
 @pytest.mark.django_db
@@ -199,7 +199,7 @@ class TestEmptyTree(TestTreeBase):
 
     def test_get_tree(self, model_without_data):
         got = list(model_without_data.get_tree())
-        assert got == []
+        assert not got
 
     def test_get_annotated_list(self, model_without_data):
         expected = []
@@ -256,7 +256,7 @@ class TestClassMethods(TestNonEmptyTree):
         nodes = model.get_tree()
         got = [(o.desc, o.get_depth(), o.get_children_count()) for o in nodes]
         assert got == UNCHANGED
-        assert all([type(o) == model for o in nodes])
+        assert all(type(o) == model for o in nodes)
 
     def test_dump_bulk_all(self, model):
         assert model.dump_bulk(keep_ids=False) == BASE_DATA
@@ -284,7 +284,7 @@ class TestClassMethods(TestNonEmptyTree):
             ("41", 5, 0),
         ]
         assert got == expected
-        assert all([type(o) == model for o in nodes])
+        assert all(type(o) == model for o in nodes)
 
     def test_get_tree_leaf(self, model):
         node = model.objects.get(desc="1")
@@ -294,7 +294,7 @@ class TestClassMethods(TestNonEmptyTree):
         got = [(o.desc, o.get_depth(), o.get_children_count()) for o in nodes]
         expected = [("1", 1, 0)]
         assert got == expected
-        assert all([type(o) == model for o in nodes])
+        assert all(type(o) == model for o in nodes)
 
     def test_get_annotated_list_all(self, model):
         expected = [
@@ -355,7 +355,7 @@ class TestClassMethods(TestNonEmptyTree):
         # https://bitbucket.org/tabo/django-treebeard/issue/48/
         related_model.objects.all().delete()
         related, created = models.RelatedModel.objects.get_or_create(
-            desc="Test %s" % related_model.__name__
+            desc=f"Test {related_model.__name__}"
         )
 
         related_data = [
@@ -390,7 +390,7 @@ class TestClassMethods(TestNonEmptyTree):
         got = model.get_root_nodes()
         expected = ["1", "2", "3", "4"]
         assert [node.desc for node in got] == expected
-        assert all([type(node) == model for node in got])
+        assert all(type(node) == model for node in got)
 
     def test_get_first_root_node(self, model):
         got = model.get_first_root_node()
@@ -508,7 +508,7 @@ class TestSimpleNodeMethods(TestNonEmptyTree):
         for desc, expected in data:
             children = model.objects.get(desc=desc).get_children()
             assert [node.desc for node in children] == expected
-            assert all([type(node) == model for node in children])
+            assert all(type(node) == model for node in children)
 
     def test_get_children_count(self, model):
         data = [
@@ -529,7 +529,7 @@ class TestSimpleNodeMethods(TestNonEmptyTree):
         for desc, expected in data:
             siblings = model.objects.get(desc=desc).get_siblings()
             assert [node.desc for node in siblings] == expected
-            assert all([type(node) == model for node in siblings])
+            assert all(type(node) == model for node in siblings)
 
     def test_get_first_sibling(self, model):
         data = [
@@ -636,7 +636,7 @@ class TestSimpleNodeMethods(TestNonEmptyTree):
         for desc, expected in data:
             nodes = model.objects.get(desc=desc).get_ancestors()
             assert [node.desc for node in nodes] == expected
-            assert all([type(node) == model for node in nodes])
+            assert all(type(node) == model for node in nodes)
 
     def test_get_descendants(self, model):
         data = [
@@ -649,7 +649,7 @@ class TestSimpleNodeMethods(TestNonEmptyTree):
         for desc, expected in data:
             nodes = model.objects.get(desc=desc).get_descendants()
             assert [node.desc for node in nodes] == expected
-            assert all([type(node) == model for node in nodes])
+            assert all(type(node) == model for node in nodes)
 
     def test_get_descendant_count(self, model):
         data = [
@@ -1866,7 +1866,7 @@ class TestInheritedModels(TestTreeBase):
         node21 = inherited_model.objects.get(desc="21")
         node3 = inherited_model.objects.get(desc="3")
         assert [node.desc for node in node21.get_children()] == ["211", "212"]
-        assert [node.desc for node in node3.get_children()] == []
+        assert not [node.desc for node in node3.get_children()]
 
     def test_get_children_count(self, inherited_model):
         node21 = inherited_model.objects.get(desc="21")
@@ -1920,13 +1920,13 @@ class TestInheritedModels(TestTreeBase):
         node21 = inherited_model.objects.get(desc="21")
         node3 = inherited_model.objects.get(desc="3")
         assert [node.desc for node in node21.get_ancestors()] == ["2"]
-        assert [node.desc for node in node3.get_ancestors()] == []
+        assert not [node.desc for node in node3.get_ancestors()]
 
     def test_get_descendants(self, inherited_model):
         node21 = inherited_model.objects.get(desc="21")
         node3 = inherited_model.objects.get(desc="3")
         assert [node.desc for node in node21.get_descendants()] == ["211", "212"]
-        assert [node.desc for node in node3.get_descendants()] == []
+        assert not [node.desc for node in node3.get_descendants()]
 
     def test_get_descendant_count(self, inherited_model):
         node21 = inherited_model.objects.get(desc="21")
@@ -1959,7 +1959,7 @@ class TestMP_TreeAlphabet(TestTreeBase):
         got_err = False
         last_good = None
         for alphabetlen in range(3, len(basealpha) + 1):
-            alphabet = basealpha[0:alphabetlen]
+            alphabet = basealpha[:alphabetlen]
             assert len(alphabet) >= 3
             expected = [alphabet[0] + char for char in alphabet[1:]]
             expected.extend([alphabet[1] + char for char in alphabet])
@@ -1985,9 +1985,9 @@ class TestMP_TreeAlphabet(TestTreeBase):
             if got != expected:
                 break
             last_good = alphabet
-        assert False, "Best BASE85 based alphabet for your setup: {} (base {})".format(
-            last_good, len(last_good)
-        )
+        assert (
+            False
+        ), f"Best BASE85 based alphabet for your setup: {last_good} (base {len(last_good)})"
 
 
 @pytest.mark.django_db
@@ -2050,7 +2050,7 @@ class TestMP_TreeSortedAutoNow(TestTreeBase):
 class TestMP_TreeStepOverflow(TestTreeBase):
     def test_add_root(self, mpsmallstep_model):
         method = mpsmallstep_model.add_root
-        for i in range(1, 10):
+        for _ in range(1, 10):
             method()
         with pytest.raises(PathOverflow):
             method()
@@ -2058,14 +2058,14 @@ class TestMP_TreeStepOverflow(TestTreeBase):
     def test_add_child(self, mpsmallstep_model):
         root = mpsmallstep_model.add_root()
         method = root.add_child
-        for i in range(1, 10):
+        for _ in range(1, 10):
             method()
         with pytest.raises(PathOverflow):
             method()
 
     def test_add_sibling(self, mpsmallstep_model):
         root = mpsmallstep_model.add_root()
-        for i in range(1, 10):
+        for _ in range(1, 10):
             root.add_child()
         positions = ("first-sibling", "left", "right", "last-sibling")
         for pos in positions:
@@ -2074,7 +2074,7 @@ class TestMP_TreeStepOverflow(TestTreeBase):
 
     def test_move(self, mpsmallstep_model):
         root = mpsmallstep_model.add_root()
-        for i in range(1, 10):
+        for _ in range(1, 10):
             root.add_child()
         newroot = mpsmallstep_model.add_root()
         targets = [
@@ -2310,9 +2310,7 @@ class TestIssues(TestTreeBase):
 @pytest.mark.django_db
 class TestMoveNodeForm(TestNonEmptyTree):
     def _get_nodes_list(self, nodes):
-        return [
-            (pk, "%s%s" % ("&nbsp;" * 4 * (depth - 1), str)) for pk, str, depth in nodes
-        ]
+        return [(pk, f'{"&nbsp;" * 4 * (depth - 1)}{str}') for pk, str, depth in nodes]
 
     def _assert_nodes_in_choices(self, form, nodes):
         choices = form.fields["_ref_node_id"].choices
@@ -2627,7 +2625,7 @@ class TestAdminTree(TestNonEmptyTree):
         # All nodes are in the result tree
         for object in model.objects.all():
             url = cl.url_for_result(object)
-            node = '<a href="%s">%s</a>' % (url, str(object))
+            node = f'<a href="{url}">{str(object)}</a>'
             assert node in table_output
         # Unfiltered
         assert '<input type="hidden" id="has-filters" value="0"/>' in table_output
@@ -2676,7 +2674,7 @@ class TestAdminTree(TestNonEmptyTree):
         # All nodes are in the result tree
         for object in model.objects.all():
             url = cl.url_for_result(object)
-            node = '<a href="%s">%s</a>' % (url, object.desc)
+            node = f'<a href="{url}">{object.desc}</a>'
             assert node in table_output
         # Unfiltered
         assert '<input type="hidden" id="has-filters" value="0"/>' in table_output

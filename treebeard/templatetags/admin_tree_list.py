@@ -28,11 +28,12 @@ def _line(context, node, request):
 
 
 def _subtree(context, node, request):
-    tree = ''
-    for subnode in node.get_children():
-        tree += format_html(
-            '<li>{}</li>',
-            mark_safe(_subtree(context, subnode, request)))
+    tree = ''.join(
+        format_html(
+            '<li>{}</li>', mark_safe(_subtree(context, subnode, request))
+        )
+        for subnode in node.get_children()
+    )
     if tree:
         tree = format_html('<ul>{}</ul>', mark_safe(tree))
     return _line(context, node, request) + tree
@@ -40,8 +41,10 @@ def _subtree(context, node, request):
 
 @register.simple_tag(takes_context=True)
 def result_tree(context, cl, request):
-    tree = ''
-    for root_node in cl.model.get_root_nodes():
-        tree += format_html(
-            '<li>{}</li>', mark_safe(_subtree(context, root_node, request)))
+    tree = ''.join(
+        format_html(
+            '<li>{}</li>', mark_safe(_subtree(context, root_node, request))
+        )
+        for root_node in cl.model.get_root_nodes()
+    )
     return format_html("<ul>{}</ul>", mark_safe(tree))

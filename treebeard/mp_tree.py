@@ -19,16 +19,12 @@ from treebeard.exceptions import InvalidMoveToDescendant, PathOverflow,\
 def sql_concat(*args, **kwargs):
     vendor = kwargs.pop('vendor', None)
     if vendor == 'mysql':
-        return 'CONCAT({})'.format(', '.join(args))
-    if vendor == 'microsoft':
-        return ' + '.join(args)
-    return '||'.join(args)
+        return f"CONCAT({', '.join(args)})"
+    return ' + '.join(args) if vendor == 'microsoft' else '||'.join(args)
 
 
 def sql_length(field, vendor=None):
-    if vendor == 'microsoft':
-        return 'LEN({})'.format(field)
-    return 'LENGTH({})'.format(field)
+    return f'LEN({field})' if vendor == 'microsoft' else f'LENGTH({field})'
 
 
 def sql_substr(field, pos, length=None, **kwargs):
@@ -38,7 +34,7 @@ def sql_substr(field, pos, length=None, **kwargs):
         function = 'SUBSTR({field}, {pos}, {length})'
     if vendor == 'microsoft':
         if not length:
-            length = 'LEN({})'.format(field)
+            length = f'LEN({field})'
         function = 'SUBSTRING({field}, {pos}, {length})'
     return function.format(field=field, pos=pos, length=length)
 
@@ -61,10 +57,7 @@ def get_result_class(cls):
       the proxy class.
     """
     base_class = cls._meta.get_field('path').model
-    if cls._meta.proxy_for_model == base_class:
-        return cls
-    else:
-        return base_class
+    return cls if cls._meta.proxy_for_model == base_class else base_class
 
 
 class MP_NodeQuerySet(models.query.QuerySet):
@@ -104,8 +97,7 @@ class MP_NodeQuerySet(models.query.QuerySet):
         parents = {}
         toremove = []
         for path, node in removed.items():
-            parentpath = node._get_basepath(node.path, node.depth - 1)
-            if parentpath:
+            if parentpath := node._get_basepath(node.path, node.depth - 1):
                 if parentpath not in parents:
                     parents[parentpath] = node.get_parent(True)
                 parent = parents[parentpath]
@@ -268,9 +260,7 @@ class MP_ComplexAddMoveHandler(MP_AddHandler):
         """
 
         vendor = self.node_cls.get_database_vendor('write')
-        sql1 = "UPDATE %s SET" % (
-            connection.ops.quote_name(
-                get_result_class(self.node_cls)._meta.db_table), )
+        sql1 = f"UPDATE {connection.ops.quote_name(get_result_class(self.node_cls)._meta.db_table)} SET"
 
         if vendor == 'mysql':
             # hooray for mysql ignoring standards in their default
@@ -281,7 +271,7 @@ class MP_ComplexAddMoveHandler(MP_AddHandler):
         else:
             sqlpath = sql_concat("%s", sql_substr("path", "%s", vendor=vendor), vendor=vendor)
 
-        sql2 = ["path=%s" % (sqlpath, )]
+        sql2 = [f"path={sqlpath}"]
         vals = [newpath, len(oldpath) + 1]
         if len(oldpath) != len(newpath) and vendor != 'mysql':
             # when using mysql, this won't update the depth and it has to be
@@ -290,9 +280,9 @@ class MP_ComplexAddMoveHandler(MP_AddHandler):
             # TODO: FIND OUT WHY?!?? right now I'm just blaming mysql
             sql2.append(("depth=" + sql_length("%s", vendor=vendor) + "/%%s") % (sqlpath, ))
             vals.extend([newpath, len(oldpath) + 1, self.node_cls.steplen])
+        vals.extend([f'{oldpath}%'])
         sql3 = "WHERE path LIKE %s"
-        vals.extend([oldpath + '%'])
-        sql = '%s %s %s' % (sql1, ', '.join(sql2), sql3)
+        sql = f"{sql1} {', '.join(sql2)} {sql3}"
         return sql, vals
 
 
@@ -405,7 +395,7 @@ class MP_AddSiblingHandler(MP_ComplexAddMoveHandler):
             newobj = self.kwargs['instance']
             if not newobj._state.adding:
                 raise NodeAlreadySaved("Attempted to add a tree node that is "\
-                    "already in the database")
+                        "already in the database")
         else:
             # creating a new object
             newobj = self.node_cls(**self.kwargs)
@@ -428,8 +418,7 @@ class MP_AddSiblingHandler(MP_ComplexAddMoveHandler):
             self.pos, newpos, self.node.depth, self.node, siblings, None,
             False)
 
-        parentpath = self.node._get_basepath(newpath, self.node.depth - 1)
-        if parentpath:
+        if parentpath := self.node._get_basepath(newpath, self.node.depth - 1):
             self.stmts.append(
                 self.get_sql_update_numchild(parentpath, 'inc'))
 
@@ -568,7 +557,7 @@ class MP_MoveHandler(MP_ComplexAddMoveHandler):
         sql = ("UPDATE %s SET depth=" + sql_length("path", vendor=vendor) + "/%%s WHERE path LIKE %%s") % (
             connection.ops.quote_name(
                 get_result_class(self.node_cls)._meta.db_table), )
-        vals = [self.node_cls.steplen, path + '%']
+        vals = [self.node_cls.steplen, f'{path}%']
         return sql, vals
 
 
@@ -778,18 +767,16 @@ class MP_Node(Node):
             ) % {'table': connection.ops.quote_name(cls._meta.db_table)}
         else:
             subquery = "(SELECT COUNT(1) FROM %(table)s AS tbn2"\
-                        " WHERE tbn2.path LIKE " + sql_concat("tbn1.path", "%%s", vendor=vendor) + ")"
-            sql = ("SELECT tbn1.path, tbn1.numchild, " + subquery +
-                    " FROM %(table)s AS tbn1 WHERE tbn1.numchild != " +
-                    subquery)
+                            " WHERE tbn2.path LIKE " + sql_concat("tbn1.path", "%%s", vendor=vendor) + ")"
+            sql = f"SELECT tbn1.path, tbn1.numchild, {subquery} FROM %(table)s AS tbn1 WHERE tbn1.numchild != {subquery}"
             sql = sql % {
                 'table': connection.ops.quote_name(cls._meta.db_table)}
             # we include the subquery twice
             vals *= 2
         cursor.execute(sql, vals)
         sql = "UPDATE %(table)s "\
-                "SET numchild=%%s "\
-                "WHERE path=%%s" % {
+                    "SET numchild=%%s "\
+                    "WHERE path=%%s" % {
                     'table': connection.ops.quote_name(cls._meta.db_table)}
         for node_data in cursor.fetchall():
             vals = [node_data[2], node_data[0]]
@@ -835,19 +822,14 @@ class MP_Node(Node):
                     for (i, item) in enumerate(desired_sequence):
                         desired_position = i + 1  # positions are 1-indexed
                         actual_position = cls._str2int(item['path'][-cls.steplen:])
-                        if actual_position == desired_position:
-                            pass
-                        else:
-                            # if a node is already in the desired position, move that node
-                            # to max_position + 1 to get it out of the way
-                            occupant = actual_sequence.get(desired_position)
-                            if occupant:
+                        if actual_position != desired_position:
+                            if occupant := actual_sequence.get(desired_position):
                                 old_path = occupant['path']
                                 max_position += 1
                                 new_path = cls._get_path(parent_path, depth, max_position)
                                 if len(new_path) > len(old_path):
                                     previous_max_path = cls._get_path(parent_path, depth, max_position - 1)
-                                    raise PathOverflow(_("Path Overflow from: '%s'" % (previous_max_path, )))
+                                    raise PathOverflow(_(f"Path Overflow from: '{previous_max_path}'"))
 
                                 cls._rewrite_node_path(old_path, new_path)
                                 # update actual_sequence to reflect the new position
@@ -949,25 +931,19 @@ class MP_Node(Node):
         subpath = sql_substr("path", "1", "%(subpathlen)s", vendor=vendor)
 
         sql = (
-            'SELECT * FROM %(table)s AS t1 INNER JOIN '
-            ' (SELECT '
-            '   ' + subpath + ' AS subpath, '
-            '   COUNT(1)-1 AS count '
-            '   FROM %(table)s '
-            '   WHERE depth >= %(depth)s %(extrand)s'
-            '   GROUP BY ' + subpath + ') AS t2 '
-            ' ON t1.path=t2.subpath '
-            ' ORDER BY t1.path'
-        ) % {
-            'table': connection.ops.quote_name(cls._meta.db_table),
-            'subpathlen': depth * cls.steplen,
-            'depth': depth,
-                'extrand': extrand}
+            f'SELECT * FROM %(table)s AS t1 INNER JOIN  (SELECT    {subpath} AS subpath,    COUNT(1)-1 AS count    FROM %(table)s    WHERE depth >= %(depth)s %(extrand)s   GROUP BY {subpath}) AS t2  ON t1.path=t2.subpath  ORDER BY t1.path'
+            % {
+                'table': connection.ops.quote_name(cls._meta.db_table),
+                'subpathlen': depth * cls.steplen,
+                'depth': depth,
+                'extrand': extrand,
+            }
+        )
         cursor = cls._get_database_cursor('write')
         cursor.execute(sql, params)
 
-        ret = []
         field_names = [field[0] for field in cursor.description]
+        ret = []
         for node_data in cursor.fetchall():
             node = cls(**dict(zip(field_names, node_data[:-2])))
             node.descendants_count = node_data[-1]
@@ -1100,7 +1076,8 @@ class MP_Node(Node):
     def get_root(self):
         """:returns: the root node for the current node object."""
         return get_result_class(self.__class__).objects.get(
-            path=self.path[0:self.steplen])
+            path=self.path[: self.steplen]
+        )
 
     def is_root(self):
         """:returns: True if the node is a root node (else, returns False)"""
@@ -1118,10 +1095,7 @@ class MP_Node(Node):
         if self.is_root():
             return get_result_class(self.__class__).objects.none()
 
-        paths = [
-            self.path[0:pos]
-            for pos in range(0, len(self.path), self.steplen)[1:]
-        ]
+        paths = [self.path[:pos] for pos in range(0, len(self.path), self.steplen)[1:]]
         return get_result_class(self.__class__).objects.filter(
             path__in=paths).order_by('depth')
 
@@ -1158,9 +1132,7 @@ class MP_Node(Node):
     @classmethod
     def _get_basepath(cls, path, depth):
         """:returns: The base path of another path up to a given depth"""
-        if path:
-            return path[0:depth * cls.steplen]
-        return ''
+        return path[:depth * cls.steplen] if path else ''
 
     @classmethod
     def _get_path(cls, path, depth, newstep):
@@ -1184,7 +1156,7 @@ class MP_Node(Node):
         newpos = self._str2int(self.path[-self.steplen:]) + 1
         key = self._int2str(newpos)
         if len(key) > self.steplen:
-            raise PathOverflow(_("Path Overflow from: '%s'" % (self.path, )))
+            raise PathOverflow(_(f"Path Overflow from: '{self.path}'"))
         return '{0}{1}{2}'.format(
             self.path[:-self.steplen],
             self.alphabet[0] * (self.steplen - len(key)),
@@ -1198,9 +1170,7 @@ class MP_Node(Node):
     @classmethod
     def _get_parent_path_from_path(cls, path):
         """:returns: The parent path for a given path"""
-        if path:
-            return path[0:len(path) - cls.steplen]
-        return ''
+        return path[:len(path) - cls.steplen] if path else ''
 
     @classmethod
     def _get_children_path_interval(cls, path):

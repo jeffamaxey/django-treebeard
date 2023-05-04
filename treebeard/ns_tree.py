@@ -30,10 +30,7 @@ def get_result_class(cls):
       the proxy class.
     """
     base_class = cls._meta.get_field('lft').model
-    if cls._meta.proxy_for_model == base_class:
-        return cls
-    else:
-        return base_class
+    return cls if cls._meta.proxy_for_model == base_class else base_class
 
 
 class NS_NodeQuerySet(models.query.QuerySet):
@@ -75,11 +72,7 @@ class NS_NodeQuerySet(models.query.QuerySet):
             # already getting removed, since that would be redundant
             removed = {}
             for node in self.order_by('tree_id', 'lft'):
-                found = False
-                for rid, rnode in removed.items():
-                    if node.is_descendant_of(rnode):
-                        found = True
-                        break
+                found = any(node.is_descendant_of(rnode) for rnode in removed.values())
                 if not found:
                     removed[node.pk] = node
 
@@ -87,7 +80,7 @@ class NS_NodeQuerySet(models.query.QuerySet):
             # we must also remove their descendants
             toremove = []
             ranges = []
-            for id, node in removed.items():
+            for node in removed.values():
                 toremove.append(Q(lft__range=(node.lft, node.rgt)) &
                                 Q(tree_id=node.tree_id))
                 ranges.append((node.tree_id, node.lft, node.rgt))
@@ -129,19 +122,13 @@ class NS_Node(Node):
             # delegate sorted insertion to add_sibling
             return last_root.add_sibling('sorted-sibling', **kwargs)
 
-        if last_root:
-            # adding the new root node as the last one
-            newtree_id = last_root.tree_id + 1
-        else:
-            # adding the first root node
-            newtree_id = 1
-
+        newtree_id = last_root.tree_id + 1 if last_root else 1
         if len(kwargs) == 1 and 'instance' in kwargs:
             # adding the passed (unsaved) instance to the tree
             newobj = kwargs['instance']
             if not newobj._state.adding:
                 raise NodeAlreadySaved("Attempted to add a tree node that is "\
-                    "already in the database")
+                        "already in the database")
         else:
             # creating the new object
             newobj = get_result_class(cls)(**kwargs)
@@ -156,19 +143,16 @@ class NS_Node(Node):
 
     @classmethod
     def _move_right(cls, tree_id, rgt, lftmove=False, incdec=2):
-        if lftmove:
-            lftop = '>='
-        else:
-            lftop = '>'
+        lftop = '>=' if lftmove else '>'
         sql = 'UPDATE %(table)s '\
-              ' SET lft = CASE WHEN lft %(lftop)s %(parent_rgt)d '\
-              '                THEN lft %(incdec)+d '\
-              '                ELSE lft END, '\
-              '     rgt = CASE WHEN rgt >= %(parent_rgt)d '\
-              '                THEN rgt %(incdec)+d '\
-              '                ELSE rgt END '\
-              ' WHERE rgt >= %(parent_rgt)d AND '\
-              '       tree_id = %(tree_id)s' % {
+                  ' SET lft = CASE WHEN lft %(lftop)s %(parent_rgt)d '\
+                  '                THEN lft %(incdec)+d '\
+                  '                ELSE lft END, '\
+                  '     rgt = CASE WHEN rgt >= %(parent_rgt)d '\
+                  '                THEN rgt %(incdec)+d '\
+                  '                ELSE rgt END '\
+                  ' WHERE rgt >= %(parent_rgt)d AND '\
+                  '       tree_id = %(tree_id)s' % {
                   'table': connection.ops.quote_name(
                       get_result_class(cls)._meta.db_table),
                   'parent_rgt': rgt,
@@ -191,10 +175,7 @@ class NS_Node(Node):
         """Adds a child to the node."""
         if not self.is_leaf():
             # there are child nodes, delegate insertion to add_sibling
-            if self.node_order_by:
-                pos = 'sorted-sibling'
-            else:
-                pos = 'last-sibling'
+            pos = 'sorted-sibling' if self.node_order_by else 'last-sibling'
             last_child = self.get_last_child()
             last_child._cached_parent_obj = self
             return last_child.add_sibling(pos, **kwargs)
@@ -208,7 +189,7 @@ class NS_Node(Node):
             newobj = kwargs['instance']
             if not newobj._state.adding:
                 raise NodeAlreadySaved("Attempted to add a tree node that is "\
-                    "already in the database")
+                        "already in the database")
         else:
             # creating a new object
             newobj = get_result_class(self.__class__)(**kwargs)
@@ -241,7 +222,7 @@ class NS_Node(Node):
             newobj = kwargs['instance']
             if not newobj._state.adding:
                 raise NodeAlreadySaved("Attempted to add a tree node that is "\
-                    "already in the database")
+                        "already in the database")
         else:
             # creating a new object
             newobj = get_result_class(self.__class__)(**kwargs)
@@ -255,9 +236,9 @@ class NS_Node(Node):
             newobj.lft = 1
             newobj.rgt = 2
             if pos == 'sorted-sibling':
-                siblings = list(target.get_sorted_pos_queryset(
-                    target.get_siblings(), newobj))
-                if siblings:
+                if siblings := list(
+                    target.get_sorted_pos_queryset(target.get_siblings(), newobj)
+                ):
                     pos = 'left'
                     target = siblings[0]
                 else:
@@ -280,9 +261,9 @@ class NS_Node(Node):
             newobj.tree_id = target.tree_id
 
             if pos == 'sorted-sibling':
-                siblings = list(target.get_sorted_pos_queryset(
-                    target.get_siblings(), newobj))
-                if siblings:
+                if siblings := list(
+                    target.get_sorted_pos_queryset(target.get_siblings(), newobj)
+                ):
                     pos = 'left'
                     target = siblings[0]
                 else:
@@ -303,9 +284,8 @@ class NS_Node(Node):
                                 break
                             elif node == target:
                                 found = True
-                if pos == 'left':
-                    if target == siblings[0]:
-                        pos = 'first-sibling'
+                if pos == 'left' and target == siblings[0]:
+                    pos = 'first-sibling'
                 if pos == 'first-sibling':
                     target = siblings[0]
 
@@ -368,9 +348,9 @@ class NS_Node(Node):
             return
 
         if pos == 'sorted-sibling':
-            siblings = list(target.get_sorted_pos_queryset(
-                target.get_siblings(), self))
-            if siblings:
+            if siblings := list(
+                target.get_sorted_pos_queryset(target.get_siblings(), self)
+            ):
                 pos = 'left'
                 target = siblings[0]
             else:
@@ -390,9 +370,8 @@ class NS_Node(Node):
                             break
                         elif node == target:
                             found = True
-            if pos == 'left':
-                if target == siblings[0]:
-                    pos = 'first-sibling'
+            if pos == 'left' and target == siblings[0]:
+                pos = 'first-sibling'
             if pos == 'first-sibling':
                 target = siblings[0]
 
@@ -416,17 +395,16 @@ class NS_Node(Node):
                 sql, params = cls._move_tree_right(1)
             elif pos == 'left':
                 sql, params = cls._move_tree_right(target.tree_id)
-        else:
-            if pos == 'last-sibling':
-                newpos = target.get_parent().rgt
-                sql, params = move_right(target.tree_id, newpos, False, gap)
-            elif pos == 'first-sibling':
-                newpos = target.lft
-                sql, params = move_right(target.tree_id,
-                                         newpos - 1, False, gap)
-            elif pos == 'left':
-                newpos = target.lft
-                sql, params = move_right(target.tree_id, newpos, True, gap)
+        elif pos == 'last-sibling':
+            newpos = target.get_parent().rgt
+            sql, params = move_right(target.tree_id, newpos, False, gap)
+        elif pos == 'first-sibling':
+            newpos = target.lft
+            sql, params = move_right(target.tree_id,
+                                     newpos - 1, False, gap)
+        elif pos == 'left':
+            newpos = target.lft
+            sql, params = move_right(target.tree_id, newpos, True, gap)
 
         if sql:
             cursor.execute(sql, params)
@@ -441,12 +419,12 @@ class NS_Node(Node):
 
         # move the tree to the hole
         sql = "UPDATE %(table)s "\
-              " SET tree_id = %(target_tree)d, "\
-              "     lft = lft + %(jump)d , "\
-              "     rgt = rgt + %(jump)d , "\
-              "     depth = depth + %(depthdiff)d "\
-              " WHERE tree_id = %(from_tree)d AND "\
-              "     lft BETWEEN %(fromlft)d AND %(fromrgt)d" % {
+                  " SET tree_id = %(target_tree)d, "\
+                  "     lft = lft + %(jump)d , "\
+                  "     rgt = rgt + %(jump)d , "\
+                  "     depth = depth + %(depthdiff)d "\
+                  " WHERE tree_id = %(from_tree)d AND "\
+                  "     lft BETWEEN %(fromlft)d AND %(fromrgt)d" % {
                   'table': connection.ops.quote_name(cls._meta.db_table),
                   'from_tree': fromobj.tree_id,
                   'target_tree': target_tree,
@@ -490,10 +468,7 @@ class NS_Node(Node):
 
         # tree, iterative preorder
         added = []
-        if parent:
-            parent_id = parent.pk
-        else:
-            parent_id = None
+        parent_id = parent.pk if parent else None
         # stack of nodes to analize
         stack = [(parent_id, node) for node in bulk_data[::-1]]
         foreign_keys = cls.get_foreign_keys()

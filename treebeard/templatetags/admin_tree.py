@@ -27,7 +27,7 @@ register = Library()
 
 def get_result_and_row_class(cl, field_name, result):
     empty_value_display = cl.model_admin.get_empty_value_display()
-    row_classes = ['field-%s' % field_name]
+    row_classes = [f'field-{field_name}']
     try:
         f, attr, value = lookup_field(field_name, result, cl.model_admin)
     except ObjectDoesNotExist:
@@ -50,10 +50,7 @@ def get_result_and_row_class(cl, field_name, result):
         else:
             if isinstance(getattr(f, 'remote_field'), models.ManyToOneRel):
                 field_val = getattr(result, f.name)
-                if field_val is None:
-                    result_repr = empty_value_display
-                else:
-                    result_repr = field_val
+                result_repr = empty_value_display if field_val is None else field_val
             else:
                 result_repr = display_for_field(value, f, empty_value_display)
             if isinstance(f, (models.DateField, models.TimeField,
@@ -61,18 +58,16 @@ def get_result_and_row_class(cl, field_name, result):
                 row_classes.append('nowrap')
         if force_str(result_repr) == '':
             result_repr = mark_safe('&nbsp;')
-    row_class = mark_safe(' class="%s"' % ' '.join(row_classes))
+    row_class = mark_safe(f""" class="{' '.join(row_classes)}\"""")
     return result_repr, row_class
 
 
 def get_spacer(first, result):
-    if first:
-        spacer = '<span class="spacer">&nbsp;</span>' * (
-            result.get_depth() - 1)
-    else:
-        spacer = ''
-
-    return spacer
+    return (
+        '<span class="spacer">&nbsp;</span>' * (result.get_depth() - 1)
+        if first
+        else ''
+    )
 
 
 def get_collapse(result):
@@ -122,20 +117,15 @@ def items_for_result(cl, result, form):
             url = cl.url_for_result(result)
             # Convert the pk to something that can be used in Javascript.
             # Problem cases are long ints (23L) and non-ASCII strings.
-            if cl.to_field:
-                attr = str(cl.to_field)
-            else:
-                attr = pk
+            attr = str(cl.to_field) if cl.to_field else pk
             value = result.serializable_value(attr)
-            result_id = "'%s'" % force_str(value)
+            result_id = f"'{force_str(value)}'"
             onclickstr = (
                 ' onclick="opener.dismissRelatedLookupPopup(window, %s);'
                 ' return false;"')
             yield mark_safe(
-                '%s<%s%s>%s %s <a href="%s"%s>%s</a></%s>' % (
-                    drag_handler, table_tag, row_class, spacer, collapse, url,
-                    (cl.is_popup and onclickstr % result_id or ''),
-                    conditional_escape(result_repr), table_tag))
+                f"""{drag_handler}<{table_tag}{row_class}>{spacer} {collapse} <a href="{url}"{cl.is_popup and onclickstr % result_id or ''}>{conditional_escape(result_repr)}</a></{table_tag}>"""
+            )
         else:
             # By default the fields come from ModelAdmin.list_editable, but if
             # we pull the fields out of the form instead of list_editable
@@ -157,9 +147,7 @@ def items_for_result(cl, result, form):
 
 def get_parent_id(node):
     """Return the node's parent id or 0 if node is a root node."""
-    if node.is_root():
-        return 0
-    return node.get_parent().pk
+    return 0 if node.is_root() else node.get_parent().pk
 
 
 def results(cl):
@@ -182,12 +170,7 @@ def check_empty_dict(GET_dict):
     This is better than doing not bool(request.GET) as an empty key will return
     True
     """
-    empty = True
-    for k, v in GET_dict.items():
-        # Don't disable on p(age) or 'all' GET param
-        if v and k != 'p' and k != 'all':
-            empty = False
-    return empty
+    return not any(v and k != 'p' and k != 'all' for k, v in GET_dict.items())
 
 
 @register.inclusion_tag(

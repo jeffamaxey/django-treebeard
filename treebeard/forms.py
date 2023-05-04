@@ -60,22 +60,13 @@ class MoveNodeForm(forms.ModelForm):
     def _get_position_ref_node(self, instance):
         if self.is_sorted:
             position = 'sorted-child'
-            node_parent = instance.get_parent()
-            if node_parent:
-                ref_node_id = node_parent.pk
-            else:
-                ref_node_id = ''
+            ref_node_id = node_parent.pk if (node_parent := instance.get_parent()) else ''
+        elif prev_sibling := instance.get_prev_sibling():
+            position = 'right'
+            ref_node_id = prev_sibling.pk
         else:
-            prev_sibling = instance.get_prev_sibling()
-            if prev_sibling:
-                position = 'right'
-                ref_node_id = prev_sibling.pk
-            else:
-                position = 'first-child'
-                if instance.is_root():
-                    ref_node_id = ''
-                else:
-                    ref_node_id = instance.get_parent().pk
+            position = 'first-child'
+            ref_node_id = '' if instance.is_root() else instance.get_parent().pk
         return {'_ref_node_id': ref_node_id,
                 '_position': position}
 
@@ -104,11 +95,7 @@ class MoveNodeForm(forms.ModelForm):
         # put initial data for these fields into a map, update the map with
         # initial data, and pass this new map to the parent constructor as
         # initial data
-        if instance is None:
-            initial_ = {}
-        else:
-            initial_ = self._get_position_ref_node(instance)
-
+        initial_ = {} if instance is None else self._get_position_ref_node(instance)
         if initial is not None:
             initial_.update(initial)
 
@@ -138,10 +125,11 @@ class MoveNodeForm(forms.ModelForm):
         position_type, reference_node_id = self._clean_cleaned_data()
 
         if self.instance._state.adding:
-            cl_data = {}
-            for field in self.cleaned_data:
-                if not isinstance(self.cleaned_data[field], (list, QuerySet)):
-                    cl_data[field] = self.cleaned_data[field]
+            cl_data = {
+                field: self.cleaned_data[field]
+                for field in self.cleaned_data
+                if not isinstance(self.cleaned_data[field], (list, QuerySet))
+            }
             if reference_node_id:
                 reference_node = self._meta.model.objects.get(
                     pk=reference_node_id)
@@ -156,10 +144,7 @@ class MoveNodeForm(forms.ModelForm):
                     pk=reference_node_id)
                 self.instance.move(reference_node, pos=position_type)
             else:
-                if self.is_sorted:
-                    pos = 'sorted-sibling'
-                else:
-                    pos = 'first-sibling'
+                pos = 'sorted-sibling' if self.is_sorted else 'first-sibling'
                 self.instance.move(self._meta.model.get_first_root_node(), pos)
         # Reload the instance
         self.instance.refresh_from_db()
@@ -169,9 +154,9 @@ class MoveNodeForm(forms.ModelForm):
     @staticmethod
     def is_loop_safe(for_node, possible_parent):
         if for_node is not None:
-            return not (
-                possible_parent == for_node
-                ) or (possible_parent.is_descendant_of(for_node))
+            return possible_parent != for_node or (
+                possible_parent.is_descendant_of(for_node)
+            )
         return True
 
     @staticmethod
@@ -217,10 +202,7 @@ def movenodeform_factory(model, form=MoveNodeForm, fields=None, exclude=None,
 
 
 def _get_exclude_for_model(model, exclude):
-    if exclude:
-        _exclude = tuple(exclude)
-    else:
-        _exclude = ()
+    _exclude = tuple(exclude) if exclude else ()
     if issubclass(model, AL_Node):
         _exclude += ('sib_order', 'parent')
     elif issubclass(model, MP_Node):

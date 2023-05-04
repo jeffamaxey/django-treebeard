@@ -8,7 +8,7 @@ import django
 
 
 def pytest_report_header(config):
-    return "Django: " + django.get_version()
+    return f"Django: {django.get_version()}"
 
 
 def pytest_configure(config):

@@ -40,14 +40,14 @@ class Node(models.Model):
         """Get foreign keys and models they refer to, so we can pre-process
         the data for load_bulk
         """
-        foreign_keys = {}
-        for field in cls._meta.fields:
+        return {
+            field.name: field.remote_field.model
+            for field in cls._meta.fields
             if (
-                field.get_internal_type() == 'ForeignKey' and
-                field.name != 'parent'
-            ):
-                foreign_keys[field.name] = field.remote_field.model
-        return foreign_keys
+                field.get_internal_type() == 'ForeignKey'
+                and field.name != 'parent'
+            )
+        }
 
     @classmethod
     def _process_foreign_keys(cls, foreign_keys, node_data):
@@ -211,10 +211,7 @@ class Node(models.Model):
             A `list` (**NOT** a Queryset) of node objects with an extra
             attribute: `descendants_count`.
         """
-        if parent is None:
-            qset = cls.get_root_nodes()
-        else:
-            qset = parent.get_children()
+        qset = cls.get_root_nodes() if parent is None else parent.get_children()
         nodes = list(qset)
         for node in nodes:
             node.descendants_count = node.get_descendant_count()
@@ -505,16 +502,13 @@ class Node(models.Model):
 
     def _prepare_pos_var(self, pos, method_name, valid_pos, valid_sorted_pos):
         if pos is None:
-            if self.node_order_by:
-                pos = 'sorted-sibling'
-            else:
-                pos = 'last-sibling'
+            pos = 'sorted-sibling' if self.node_order_by else 'last-sibling'
         if pos not in valid_pos:
-            raise InvalidPosition('Invalid relative position: %s' % (pos, ))
+            raise InvalidPosition(f'Invalid relative position: {pos}')
         if self.node_order_by and pos not in valid_sorted_pos:
             raise InvalidPosition(
-                'Must use %s in %s when node_order_by is enabled' % (
-                    ' or '.join(valid_sorted_pos), method_name))
+                f"Must use {' or '.join(valid_sorted_pos)} in {method_name} when node_order_by is enabled"
+            )
         if pos in valid_sorted_pos and not self.node_order_by:
             raise MissingNodeOrderBy('Missing node_order_by attribute.')
         return pos
@@ -557,8 +551,10 @@ class Node(models.Model):
             value = getattr(newobj, field)
             filters.append(
                 Q(
-                    *[Q(**{f: v}) for f, v in fields] +
-                     [Q(**{'%s__gt' % field: value})]
+                    *(
+                        [Q(**{f: v}) for f, v in fields]
+                        + [Q(**{f'{field}__gt': value})]
+                    )
                 )
             )
             fields.append((field, value))

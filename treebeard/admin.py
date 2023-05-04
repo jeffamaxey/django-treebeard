@@ -104,7 +104,7 @@ class TreeAdmin(admin.ModelAdmin):
 
         node = self.get_node(node_id)
         target = self.get_node(target_id)
-        is_sorted = True if node.node_order_by else False
+        is_sorted = bool(node.node_order_by)
 
         pos = {
             (True, True): 'sorted-child',
@@ -121,7 +121,4 @@ def admin_factory(form_class):
     :param form_class:
     :return: A TreeAdmin subclass.
     """
-    return type(
-        form_class.__name__ + 'Admin',
-        (TreeAdmin,),
-        dict(form=form_class))
+    return type(f'{form_class.__name__}Admin', (TreeAdmin,), dict(form=form_class))

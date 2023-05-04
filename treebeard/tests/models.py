@@ -235,7 +235,7 @@ class MP_TestNodeUuid(MP_Node):
     desc = models.CharField(max_length=255)
 
     def __str__(self):  # pragma: no cover
-        return "Node %s" % self.pk
+        return f"Node {self.pk}"
 
 
 # This is how you change the default fields defined in a Django abstract class

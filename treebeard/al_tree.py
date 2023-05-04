@@ -25,10 +25,7 @@ def get_result_class(cls):
       the proxy class.
     """
     base_class = cls._meta.get_field('parent').model
-    if cls._meta.proxy_for_model == base_class:
-        return cls
-    else:
-        return base_class
+    return cls if cls._meta.proxy_for_model == base_class else base_class
 
 
 class AL_NodeManager(models.Manager):
@@ -111,17 +108,16 @@ class AL_Node(Node):
 
     def get_parent(self, update=False):
         """:returns: the parent node of the current node object."""
-        if self._meta.proxy_for_model:
-            # the current node is a proxy model; the returned parent
-            # should be the same proxy model, so we need to explicitly
-            # fetch it as an instance of that model rather than simply
-            # following the 'parent' relation
-            if self.parent_id is None:
-                return None
-            else:
-                return self.__class__.objects.get(pk=self.parent_id)
-        else:
+        if not self._meta.proxy_for_model:
             return self.parent
+        # the current node is a proxy model; the returned parent
+        # should be the same proxy model, so we need to explicitly
+        # fetch it as an instance of that model rather than simply
+        # following the 'parent' relation
+        if self.parent_id is None:
+            return None
+        else:
+            return self.__class__.objects.get(pk=self.parent_id)
 
     def get_ancestors(self):
         """
@@ -148,10 +144,7 @@ class AL_Node(Node):
 
     def get_root(self):
         """:returns: the root node for the current node object."""
-        ancestors = self.get_ancestors()
-        if ancestors:
-            return ancestors[0]
-        return self
+        return ancestors[0] if (ancestors := self.get_ancestors()) else self
 
     def is_descendant_of(self, node):
         """
@@ -234,10 +227,7 @@ class AL_Node(Node):
 
     @classmethod
     def _get_tree_recursively(cls, results, parent, depth):
-        if parent:
-            nodes = parent.get_children()
-        else:
-            nodes = cls.get_root_nodes()
+        nodes = parent.get_children() if parent else cls.get_root_nodes()
         for node in nodes:
             node._cached_depth = depth
             results.append(node)
@@ -382,22 +372,13 @@ class AL_Node(Node):
             # special cases, not actually moving the node so no need to UPDATE
             return
 
-        if pos == 'sorted-sibling':
-            if parent:
-                self.parent = parent
-            else:
-                self.parent = target.parent
-        else:
+        if pos != 'sorted-sibling':
             if sib_order:
                 self.sib_order = sib_order
             else:
                 self.sib_order = self.__class__._get_new_sibling_order(pos,
                                                                        target)
-            if parent:
-                self.parent = parent
-            else:
-                self.parent = target.parent
-
+        self.parent = parent if parent else target.parent
         self.save()
 
     class Meta:

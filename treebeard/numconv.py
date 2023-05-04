@@ -6,6 +6,7 @@ https://tabo.pe/projects/numconv/
 """
 
 
+
 __version__ = '2.1.1'
 
 # from april fool's rfc 1924
@@ -17,7 +18,7 @@ BASE16 = BASE85[:16]
 BASE32 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
 BASE32HEX = BASE85[:32]
 BASE64 = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/'
-BASE64URL = BASE64[:62] + '-_'
+BASE64URL = f'{BASE64[:62]}-_'
 
 # http://en.wikipedia.org/wiki/Base_62 useful for url shorteners
 BASE62 = BASE85[:62]
@@ -50,8 +51,7 @@ class NumConv(object):
         self.alphabet = alphabet
         self.cached_map = dict(zip(self.alphabet, range(len(self.alphabet))))
         if len(self.cached_map) != len(self.alphabet):
-            raise ValueError("duplicate characters found in '%s'" % (
-                self.alphabet, ))
+            raise ValueError(f"duplicate characters found in '{self.alphabet}'")
 
     def int2str(self, num):
         """Converts an integer into a string.
